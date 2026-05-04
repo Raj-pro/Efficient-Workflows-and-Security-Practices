@@ -1,0 +1,15 @@
+# File: .github/dependabot.yml
+version: 2
+updates:
+  # Check the npm ecosystem
+  - package-ecosystem: "npm"
+    # Look for the package.json in the root directory
+    directory: "/"
+    # Run the check every Monday
+    schedule:
+      interval: "weekly"
+
+    # Advanced: Automatically assign PRs to the security team
+    reviewers:
+      - "alex-lead-dev"
+      - "security-team"

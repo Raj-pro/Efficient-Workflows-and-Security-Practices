@@ -1,0 +1,82 @@
+name: Secure DevSecOps Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# STRICT LEAST PRIVILEGE
+permissions:
+  contents: read           # Read the repo code
+  security-events: write   # Upload SAST results
+  id-token: write          # Request OIDC cloud tokens
+
+jobs:
+  security_audit:
+    name: CodeQL SAST Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: 'javascript'
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  build_and_package:
+    name: Build Docker Image
+    needs: security_audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Setup Docker Buildx (required for advanced caching)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Simulate logging into a container registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build with intelligent Layer Caching
+      - name: Build and Export Container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false # Just building to verify it works for the PR
+          tags: ghcr.io/my-org/secure-app:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/my-org/secure-app:buildcache
+          cache-to: type=registry,ref=ghcr.io/my-org/secure-app:buildcache,mode=max
+
+  deploy_production:
+    name: Deploy via OIDC
+    needs: build_and_package
+    # Only run this on the main branch, not on Pull Requests!
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # OIDC MAGIC: Authenticate to AWS without a static password!
+      - name: Configure AWS Credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/GitHubActionsDeployRole
+          aws-region: us-east-1
+
+      - name: Deploy to Cloud
+        run: |
+          echo "Identity verified securely."
+          echo "Deploying the secure, audited, and cached container!"
+          ./scripts/deploy.sh
